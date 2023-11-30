@@ -360,6 +360,9 @@ def main():
     np.random.seed(args.seed + args.local_rank)
     if args.local_rank == 0:
         print(args)
+        
+    #create save dir
+    os.makedirs(args.save_dir, exist_ok=True)
 
     # Creat model and diffusion process
     model = unets.__dict__[args.arch](
