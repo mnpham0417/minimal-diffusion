@@ -758,14 +758,7 @@ class UNetModel(nn.Module):
         emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
         if self.num_classes is not None:
             assert y.shape == (x.shape[0],)
-            # emb = emb + self.label_emb(y)
-            label_emb_gaussian_noise = th.randn_like(emb)
-            #scale label_emb_gaussian_noise to be between -4.2908 and 3.3445
-            min_val, max_val = -4.2908, 3.3445
-            scaled_label_emb_gaussian_noise = min_val + (max_val - min_val) * (label_emb_gaussian_noise - th.min(label_emb_gaussian_noise)) / (th.max(label_emb_gaussian_noise) - th.min(label_emb_gaussian_noise))
-
-            emb = emb + scaled_label_emb_gaussian_noise
-                        
+            emb = emb + self.label_emb(y)
         h = x.type(self.dtype)
         for module in self.input_blocks:
             h = module(h, emb)
