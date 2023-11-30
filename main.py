@@ -347,7 +347,7 @@ def main():
 
     # misc
     parser.add_argument("--save-dir", type=str, default="./trained_models/")
-    parser.add_argument("--local_rank", default=0, type=int)
+    parser.add_argument("--local-rank", default=0, type=int)
     parser.add_argument("--seed", default=112233, type=int)
 
     # setup
