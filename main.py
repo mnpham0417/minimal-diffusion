@@ -186,7 +186,6 @@ class loss_logger:
                 + f"\t Time elapsed: {(time() - self.start_time)/3600:.3f} hr"
             )
 
-
 def train_one_epoch(
     model,
     dataloader,
