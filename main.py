@@ -16,6 +16,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from data import get_metadata, get_dataset, fix_legacy_dict
 import unets
+from torch.utils.data import Subset
 
 unsqueeze3x = lambda x: x[..., None, None, None]
 
@@ -431,6 +432,15 @@ def main():
 
     # Load dataset
     train_set = get_dataset(args.dataset, args.data_dir, metadata)
+    
+    # Load dataset
+    # train_set = get_dataset(args.dataset, args.data_dir, metadata)
+    # class_except_zero_indices = [i for i, (_, label) in enumerate(train_set) if label != 0]
+
+    # Create a subdataset all classes except 0
+    # class_except_zero_indices = Subset(train_set, class_except_zero_indices)
+    # train_set = class_except_zero_indices
+    
     sampler = DistributedSampler(train_set) if ngpus > 1 else None
     train_loader = DataLoader(
         train_set,

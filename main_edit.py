@@ -332,6 +332,10 @@ def sample_N_images(
                 y = torch.randint(num_classes, (len(xT),), dtype=torch.int64).to(
                     args.device
                 )
+                
+                #set half of the labels to 0
+                y[:len(y)] = 0
+                
             else:
                 y = None
             gen_images = diffusion.sample_from_reverse_process(
@@ -422,6 +426,9 @@ def main():
     np.random.seed(args.seed + args.local_rank)
     if args.local_rank == 0:
         print(args)
+        
+    if args.sampling_only:
+        os.makedirs(args.save_dir, exist_ok=True)
 
     # Creat model and diffusion process
     model_pr = unets.__dict__[args.arch](
@@ -484,8 +491,17 @@ def main():
     task_vector = TaskVector(model_pr, model_ft)
     # Negate the task vector
     neg_task_vector = -task_vector
+    # print(neg_task_vector.vector)
     model = neg_task_vector.apply_to(model_pr, scaling_coef=1.5)
-            
+    
+    torch.save(
+        model.state_dict(),
+        os.path.join(
+            args.save_dir,
+            f"{args.arch}_{args.dataset}-epoch_{args.epochs}-timesteps_{args.diffusion_steps}-class_condn_{args.class_cond}.pt",
+        ),
+    )
+    
     # distributed training
     ngpus = torch.cuda.device_count()
     if ngpus > 1:
@@ -494,7 +510,30 @@ def main():
         args.batch_size = args.batch_size // ngpus
         torch.distributed.init_process_group(backend="nccl", init_method="env://")
         model = DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
-
+    
+    sampled_images, _ = sample_N_images(
+                64,
+                model,
+                diffusion,
+                None,
+                args.sampling_steps,
+                args.batch_size,
+                metadata.num_channels,
+                metadata.image_size,
+                metadata.num_classes,
+                args,
+            )
+    if args.local_rank == 0:
+        cv2.imwrite(
+            os.path.join(
+                args.save_dir,
+                f"{args.arch}_{args.dataset}-{args.diffusion_steps}_steps-{args.sampling_steps}-sampling_steps-class_condn_{args.class_cond}.png",
+            ),
+            np.concatenate(sampled_images, axis=1)[:, :, ::-1],
+        )
+        
+    assert 0
+            
     # sampling
     if args.sampling_only:
         sampled_images, labels = sample_N_images(

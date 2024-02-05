@@ -3,11 +3,10 @@
 # Change data-dir to refer to the path of training dataset on your machine
 # Following datasets needs to be manually downloaded before training: melanoma, afhq, celeba, cars, flowers, gtsrb.
 CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --nproc_per_node=2 --master_port 8101 main_edit.py \
-    --arch UNet --dataset mnist --class-cond --epochs 100 --batch-size 256 --num-sampled-images 200 \
-    --pretrained-ckpt "/vast/mp5847/minimal-diffusion/trained_models/UNet_mnist-epoch_100-timesteps_1000-class_condn_True_ema_0.9995.pt" \
-    --ft-ckpt "/vast/mp5847/minimal-diffusion/trained_models_ft_0_lr=0.0001_epochs=100_all/UNet_mnist-epoch_100-timesteps_1000-class_condn_True_ema_0.9995.pt" \
-    --save-dir "./test_gaussian/" --sampling-steps 250 --sampling-only
-
+    --arch UNet_4 --dataset mnist --class-cond --epochs 100 --batch-size 256 --num-sampled-images 1000 \
+    --pretrained-ckpt "/vast/mp5847/minimal-diffusion/trained_models_UNet_4_unit_sphere/UNet_4_mnist-epoch_100-timesteps_1000-class_condn_True_ema_0.9995.pt" \
+    --ft-ckpt "/vast/mp5847/minimal-diffusion/trained_models_UNet_4_unit_sphere_ft_0_lr=0.0001_epochs=100_random/UNet_4_mnist-epoch_100-timesteps_1000-class_condn_True_ema_0.9995.pt" \
+    --save-dir "./trained_models_UNet_4_epochs=100_unit_sphere_0_tv=1.5_random/" --sampling-steps 600 --sampling-only
 
 # CUDA_VISIBLE_DEVICES=4,5,6,7 python -m torch.distributed.launch --nproc_per_node=4 --master_port 8102  main.py \
 #     --arch UNet --dataset mnist_m --class-cond --epochs 250 --batch-size 256 --sampling-steps 100 \

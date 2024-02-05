@@ -3,7 +3,7 @@
 # Change data-dir to refer to the path of training dataset on your machine
 # Following datasets needs to be manually downloaded before training: melanoma, afhq, celeba, cars, flowers, gtsrb.
 CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch --nproc_per_node=2 --master_port 8101 main.py \
-    --arch UNet --dataset mnist --class-cond --epochs 100 --batch-size 512 --sampling-steps 100
+    --arch UNet_1 --dataset mnist --class-cond --epochs 100 --batch-size 512 --sampling-steps 100 --save-dir ./test
 
 # CUDA_VISIBLE_DEVICES=4,5,6,7 python -m torch.distributed.launch --nproc_per_node=4 --master_port 8102  main.py \
 #     --arch UNet --dataset mnist_m --class-cond --epochs 250 --batch-size 256 --sampling-steps 100 \

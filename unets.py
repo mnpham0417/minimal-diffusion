@@ -6,7 +6,31 @@ import numpy as np
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
+import torch
 
+def sample_nearby_unit_vectors(v, epsilon=0.01):
+    """
+    Samples random unit vectors close to each vector in a batch v.
+
+    Args:
+    v (torch.Tensor): A batch of unit vectors with shape (batch, dim).
+    epsilon (float): A small value determining how close the new vectors should be to v.
+
+    Returns:
+    torch.Tensor: A batch of new unit vectors close to each vector in v.
+    """
+    # Normalize v to ensure each vector in the batch is a unit vector
+    v = v / v.norm(dim=1, keepdim=True)
+
+    # Generate small random perturbations for each vector in the batch
+    perturbation = torch.randn(v.shape) * epsilon
+    perturbation = perturbation.to(v.device)
+
+    # Add the perturbation to v and normalize
+    v_prime = v + perturbation
+    v_prime = v_prime / v_prime.norm(dim=1, keepdim=True)
+
+    return v_prime
 
 class GroupNorm32(nn.GroupNorm):
     def forward(self, x):
@@ -594,6 +618,11 @@ class UNetModel(nn.Module):
         self.num_heads_upsample = num_heads_upsample
 
         time_embed_dim = model_channels * time_emb_factor
+        
+        time_embed_dim = int(time_embed_dim)
+        
+        print("time_embed_dim: ", time_embed_dim)
+        
         self.time_embed = nn.Sequential(
             linear(model_channels, time_embed_dim),
             nn.SiLU(),
@@ -741,7 +770,7 @@ class UNetModel(nn.Module):
             zero_module(conv_nd(dims, input_ch, out_channels, 3, padding=1)),
         )
 
-    def forward(self, x, timesteps, y=None):
+    def forward(self, x, timesteps, y=None, soft_point=None):
         """
         Apply the model to an input batch.
         :param x: an [N x C x ...] Tensor of inputs.
@@ -756,9 +785,32 @@ class UNetModel(nn.Module):
 
         hs = []
         emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
+
         if self.num_classes is not None:
             assert y.shape == (x.shape[0],)
-            emb = emb + self.label_emb(y)
+            if(soft_point is None):
+                # pass
+                # y = torch.zeros_like(y)
+                label_emb = self.label_emb(y)
+                
+                #sample gaussian noise with shape (128, 256)
+                # label_emb = th.randn((x.shape[0], 4)).to(x.device)
+                
+                #normalize label_emb to be within unit sphere
+                label_emb = label_emb / label_emb.norm(dim=-1, keepdim=True)
+                
+                #sample gaussian vector closed to label_emb
+                # label_emb = sample_nearby_unit_vectors(label_emb, epsilon=0.05).to(x.device)
+            else:
+                # print("Using provided soft point")
+                label_emb = torch.Tensor(soft_point).to(x.device)
+                label_emb = label_emb / label_emb.norm(dim=-1, keepdim=True)
+                
+                #repeat label_emb to match batch size
+                label_emb = label_emb.repeat(x.shape[0], 1)
+ 
+            emb = emb + label_emb
+            
         h = x.type(self.dtype)
         for module in self.input_blocks:
             h = module(h, emb)
@@ -906,6 +958,430 @@ def UNetSmall(
         use_fp16=False,
         num_heads=4,
         num_head_channels=32,
+        num_heads_upsample=-1,
+        use_scale_shift_norm=True,
+        resblock_updown=True,
+        use_new_attention_order=True,
+    )
+    
+def UNet_256(
+    image_size,
+    in_channels=3,
+    out_channels=3,
+    base_width=64,
+    num_classes=None,
+):
+    if image_size == 128:
+        channel_mult = (1, 1, 2, 3, 4)
+    elif image_size == 64:
+        channel_mult = (1, 2, 3, 4)
+    elif image_size == 32:
+        channel_mult = (1, 2, 2, 2)
+    elif image_size == 28:
+        channel_mult = (1, 2, 2, 2)
+    else:
+        raise ValueError(f"unsupported image size: {image_size}")
+
+    attention_ds = []
+    if image_size == 28:
+        attention_resolutions = "28,14,7"
+    else:
+        attention_resolutions = "32,16,8"
+    for res in attention_resolutions.split(","):
+        attention_ds.append(image_size // int(res))
+
+    return UNetModel(
+        image_size=image_size,
+        in_channels=in_channels,
+        model_channels=base_width,
+        out_channels=out_channels,
+        num_res_blocks=3,
+        attention_resolutions=tuple(attention_ds),
+        time_emb_factor=4,
+        dropout=0.1,
+        channel_mult=channel_mult,
+        num_classes=num_classes,
+        use_checkpoint=False,
+        use_fp16=False,
+        num_heads=4,
+        num_head_channels=64,
+        num_heads_upsample=-1,
+        use_scale_shift_norm=True,
+        resblock_updown=True,
+        use_new_attention_order=True,
+    )
+    
+def UNet_128(
+    image_size,
+    in_channels=3,
+    out_channels=3,
+    base_width=64,
+    num_classes=None,
+):
+    if image_size == 128:
+        channel_mult = (1, 1, 2, 3, 4)
+    elif image_size == 64:
+        channel_mult = (1, 2, 3, 4)
+    elif image_size == 32:
+        channel_mult = (1, 2, 2, 2)
+    elif image_size == 28:
+        channel_mult = (1, 2, 2, 2)
+    else:
+        raise ValueError(f"unsupported image size: {image_size}")
+
+    attention_ds = []
+    if image_size == 28:
+        attention_resolutions = "28,14,7"
+    else:
+        attention_resolutions = "32,16,8"
+    for res in attention_resolutions.split(","):
+        attention_ds.append(image_size // int(res))
+
+    return UNetModel(
+        image_size=image_size,
+        in_channels=in_channels,
+        model_channels=base_width,
+        out_channels=out_channels,
+        num_res_blocks=3,
+        attention_resolutions=tuple(attention_ds),
+        time_emb_factor=2,
+        dropout=0.1,
+        channel_mult=channel_mult,
+        num_classes=num_classes,
+        use_checkpoint=False,
+        use_fp16=False,
+        num_heads=4,
+        num_head_channels=64,
+        num_heads_upsample=-1,
+        use_scale_shift_norm=True,
+        resblock_updown=True,
+        use_new_attention_order=True,
+    )
+
+    
+def UNet_64(
+    image_size,
+    in_channels=3,
+    out_channels=3,
+    base_width=64,
+    num_classes=None,
+):
+    if image_size == 128:
+        channel_mult = (1, 1, 2, 3, 4)
+    elif image_size == 64:
+        channel_mult = (1, 2, 3, 4)
+    elif image_size == 32:
+        channel_mult = (1, 2, 2, 2)
+    elif image_size == 28:
+        channel_mult = (1, 2, 2, 2)
+    else:
+        raise ValueError(f"unsupported image size: {image_size}")
+
+    attention_ds = []
+    if image_size == 28:
+        attention_resolutions = "28,14,7"
+    else:
+        attention_resolutions = "32,16,8"
+    for res in attention_resolutions.split(","):
+        attention_ds.append(image_size // int(res))
+
+    return UNetModel(
+        image_size=image_size,
+        in_channels=in_channels,
+        model_channels=base_width,
+        out_channels=out_channels,
+        num_res_blocks=3,
+        attention_resolutions=tuple(attention_ds),
+        time_emb_factor=1,
+        dropout=0.1,
+        channel_mult=channel_mult,
+        num_classes=num_classes,
+        use_checkpoint=False,
+        use_fp16=False,
+        num_heads=4,
+        num_head_channels=64,
+        num_heads_upsample=-1,
+        use_scale_shift_norm=True,
+        resblock_updown=True,
+        use_new_attention_order=True,
+    )
+    
+def UNet_32(
+    image_size,
+    in_channels=3,
+    out_channels=3,
+    base_width=64,
+    num_classes=None,
+):
+    if image_size == 128:
+        channel_mult = (1, 1, 2, 3, 4)
+    elif image_size == 64:
+        channel_mult = (1, 2, 3, 4)
+    elif image_size == 32:
+        channel_mult = (1, 2, 2, 2)
+    elif image_size == 28:
+        channel_mult = (1, 2, 2, 2)
+    else:
+        raise ValueError(f"unsupported image size: {image_size}")
+
+    attention_ds = []
+    if image_size == 28:
+        attention_resolutions = "28,14,7"
+    else:
+        attention_resolutions = "32,16,8"
+    for res in attention_resolutions.split(","):
+        attention_ds.append(image_size // int(res))
+
+    return UNetModel(
+        image_size=image_size,
+        in_channels=in_channels,
+        model_channels=base_width,
+        out_channels=out_channels,
+        num_res_blocks=3,
+        attention_resolutions=tuple(attention_ds),
+        time_emb_factor=0.5,
+        dropout=0.1,
+        channel_mult=channel_mult,
+        num_classes=num_classes,
+        use_checkpoint=False,
+        use_fp16=False,
+        num_heads=4,
+        num_head_channels=64,
+        num_heads_upsample=-1,
+        use_scale_shift_norm=True,
+        resblock_updown=True,
+        use_new_attention_order=True,
+    )
+    
+def UNet_16(
+    image_size,
+    in_channels=3,
+    out_channels=3,
+    base_width=64,
+    num_classes=None,
+):
+    if image_size == 128:
+        channel_mult = (1, 1, 2, 3, 4)
+    elif image_size == 64:
+        channel_mult = (1, 2, 3, 4)
+    elif image_size == 32:
+        channel_mult = (1, 2, 2, 2)
+    elif image_size == 28:
+        channel_mult = (1, 2, 2, 2)
+    else:
+        raise ValueError(f"unsupported image size: {image_size}")
+
+    attention_ds = []
+    if image_size == 28:
+        attention_resolutions = "28,14,7"
+    else:
+        attention_resolutions = "32,16,8"
+    for res in attention_resolutions.split(","):
+        attention_ds.append(image_size // int(res))
+
+    return UNetModel(
+        image_size=image_size,
+        in_channels=in_channels,
+        model_channels=base_width,
+        out_channels=out_channels,
+        num_res_blocks=3,
+        attention_resolutions=tuple(attention_ds),
+        time_emb_factor=0.25,
+        dropout=0.1,
+        channel_mult=channel_mult,
+        num_classes=num_classes,
+        use_checkpoint=False,
+        use_fp16=False,
+        num_heads=4,
+        num_head_channels=64,
+        num_heads_upsample=-1,
+        use_scale_shift_norm=True,
+        resblock_updown=True,
+        use_new_attention_order=True,
+    )
+    
+def UNet_8(
+    image_size,
+    in_channels=3,
+    out_channels=3,
+    base_width=64,
+    num_classes=None,
+):
+    if image_size == 128:
+        channel_mult = (1, 1, 2, 3, 4)
+    elif image_size == 64:
+        channel_mult = (1, 2, 3, 4)
+    elif image_size == 32:
+        channel_mult = (1, 2, 2, 2)
+    elif image_size == 28:
+        channel_mult = (1, 2, 2, 2)
+    else:
+        raise ValueError(f"unsupported image size: {image_size}")
+
+    attention_ds = []
+    if image_size == 28:
+        attention_resolutions = "28,14,7"
+    else:
+        attention_resolutions = "32,16,8"
+    for res in attention_resolutions.split(","):
+        attention_ds.append(image_size // int(res))
+
+    return UNetModel(
+        image_size=image_size,
+        in_channels=in_channels,
+        model_channels=base_width,
+        out_channels=out_channels,
+        num_res_blocks=3,
+        attention_resolutions=tuple(attention_ds),
+        time_emb_factor=0.125,
+        dropout=0.1,
+        channel_mult=channel_mult,
+        num_classes=num_classes,
+        use_checkpoint=False,
+        use_fp16=False,
+        num_heads=4,
+        num_head_channels=64,
+        num_heads_upsample=-1,
+        use_scale_shift_norm=True,
+        resblock_updown=True,
+        use_new_attention_order=True,
+    )
+    
+def UNet_4(
+    image_size,
+    in_channels=3,
+    out_channels=3,
+    base_width=64,
+    num_classes=None,
+):
+    if image_size == 128:
+        channel_mult = (1, 1, 2, 3, 4)
+    elif image_size == 64:
+        channel_mult = (1, 2, 3, 4)
+    elif image_size == 32:
+        channel_mult = (1, 2, 2, 2)
+    elif image_size == 28:
+        channel_mult = (1, 2, 2, 2)
+    else:
+        raise ValueError(f"unsupported image size: {image_size}")
+
+    attention_ds = []
+    if image_size == 28:
+        attention_resolutions = "28,14,7"
+    else:
+        attention_resolutions = "32,16,8"
+    for res in attention_resolutions.split(","):
+        attention_ds.append(image_size // int(res))
+
+    return UNetModel(
+        image_size=image_size,
+        in_channels=in_channels,
+        model_channels=base_width,
+        out_channels=out_channels,
+        num_res_blocks=3,
+        attention_resolutions=tuple(attention_ds),
+        time_emb_factor=0.0625,
+        dropout=0.1,
+        channel_mult=channel_mult,
+        num_classes=num_classes,
+        use_checkpoint=False,
+        use_fp16=False,
+        num_heads=4,
+        num_head_channels=64,
+        num_heads_upsample=-1,
+        use_scale_shift_norm=True,
+        resblock_updown=True,
+        use_new_attention_order=True,
+    )
+    
+def UNet_2(
+    image_size,
+    in_channels=3,
+    out_channels=3,
+    base_width=64,
+    num_classes=None,
+):
+    if image_size == 128:
+        channel_mult = (1, 1, 2, 3, 4)
+    elif image_size == 64:
+        channel_mult = (1, 2, 3, 4)
+    elif image_size == 32:
+        channel_mult = (1, 2, 2, 2)
+    elif image_size == 28:
+        channel_mult = (1, 2, 2, 2)
+    else:
+        raise ValueError(f"unsupported image size: {image_size}")
+
+    attention_ds = []
+    if image_size == 28:
+        attention_resolutions = "28,14,7"
+    else:
+        attention_resolutions = "32,16,8"
+    for res in attention_resolutions.split(","):
+        attention_ds.append(image_size // int(res))
+
+    return UNetModel(
+        image_size=image_size,
+        in_channels=in_channels,
+        model_channels=base_width,
+        out_channels=out_channels,
+        num_res_blocks=3,
+        attention_resolutions=tuple(attention_ds),
+        time_emb_factor=0.03125,
+        dropout=0.1,
+        channel_mult=channel_mult,
+        num_classes=num_classes,
+        use_checkpoint=False,
+        use_fp16=False,
+        num_heads=4,
+        num_head_channels=64,
+        num_heads_upsample=-1,
+        use_scale_shift_norm=True,
+        resblock_updown=True,
+        use_new_attention_order=True,
+    )
+    
+def UNet_1(
+    image_size,
+    in_channels=3,
+    out_channels=3,
+    base_width=64,
+    num_classes=None,
+):
+    if image_size == 128:
+        channel_mult = (1, 1, 2, 3, 4)
+    elif image_size == 64:
+        channel_mult = (1, 2, 3, 4)
+    elif image_size == 32:
+        channel_mult = (1, 2, 2, 2)
+    elif image_size == 28:
+        channel_mult = (1, 2, 2, 2)
+    else:
+        raise ValueError(f"unsupported image size: {image_size}")
+
+    attention_ds = []
+    if image_size == 28:
+        attention_resolutions = "28,14,7"
+    else:
+        attention_resolutions = "32,16,8"
+    for res in attention_resolutions.split(","):
+        attention_ds.append(image_size // int(res))
+
+    return UNetModel(
+        image_size=image_size,
+        in_channels=in_channels,
+        model_channels=base_width,
+        out_channels=out_channels,
+        num_res_blocks=3,
+        attention_resolutions=tuple(attention_ds),
+        time_emb_factor=0.015625,
+        dropout=0.1,
+        channel_mult=channel_mult,
+        num_classes=num_classes,
+        use_checkpoint=False,
+        use_fp16=False,
+        num_heads=4,
+        num_head_channels=64,
         num_heads_upsample=-1,
         use_scale_shift_norm=True,
         resblock_updown=True,

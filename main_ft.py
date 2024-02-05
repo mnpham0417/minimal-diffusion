@@ -200,15 +200,17 @@ def train_one_epoch(
     model.train()
     for step, (images, labels) in enumerate(dataloader):
         assert (images.max().item() <= 1) and (0 <= images.min().item())
-
+        
         # must use [-1, 1] pixel range for images
         images, labels = (
             2 * images.to(args.device) - 1,
             labels.to(args.device) if args.class_cond else None,
         )
         
-        #random numbers from 0-9 with same size as labels
-        labels = torch.randint(0, 10, labels.size()).to(args.device)
+        # #random numbers from 0-9 with same size as labels
+        # labels = torch.randint(0, 10, labels.size()).to(args.device)
+        # labels = torch.zeros_like(labels).to(args.device)
+
         t = torch.randint(diffusion.timesteps, (len(images),), dtype=torch.int64).to(
             args.device
         )
@@ -353,6 +355,9 @@ def main():
     parser.add_argument("--save-dir", type=str, default="./trained_models/")
     parser.add_argument("--local-rank", default=0, type=int)
     parser.add_argument("--seed", default=112233, type=int)
+    
+    #finetuning param
+    parser.add_argument("--target-class", default=0, type=int)
 
     # setup
     args = parser.parse_args()
@@ -364,6 +369,9 @@ def main():
     np.random.seed(args.seed + args.local_rank)
     if args.local_rank == 0:
         print(args)
+        
+    #create save dir
+    os.makedirs(args.save_dir, exist_ok=True)
 
     # Creat model and diffusion process
     model = unets.__dict__[args.arch](
@@ -372,6 +380,10 @@ def main():
         out_channels=metadata.num_channels,
         num_classes=metadata.num_classes if args.class_cond else None,
     ).to(args.device)
+    
+    #freeze label_emb
+    # model.label_emb.requires_grad = False
+    
     if args.local_rank == 0:
         print(
             "We are assuming that model input/ouput pixel range is [-1, 1]. Please adhere to it."
@@ -440,7 +452,8 @@ def main():
 
     # Load dataset
     train_set = get_dataset(args.dataset, args.data_dir, metadata)
-    class_zero_indices = [i for i, (_, label) in enumerate(train_set) if label == 0]
+    class_zero_indices = [i for i, (_, label) in enumerate(train_set) if label == args.target_class]
+    # class_zero_indices = [i for i, (_, label) in enumerate(train_set) if label == 1]
 
     # Create a subdataset with only class 0
     class_zero_dataset = Subset(train_set, class_zero_indices)
