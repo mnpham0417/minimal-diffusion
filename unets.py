@@ -620,9 +620,7 @@ class UNetModel(nn.Module):
         time_embed_dim = model_channels * time_emb_factor
         
         time_embed_dim = int(time_embed_dim)
-        
-        print("time_embed_dim: ", time_embed_dim)
-        
+                
         self.time_embed = nn.Sequential(
             linear(model_channels, time_embed_dim),
             nn.SiLU(),
@@ -770,7 +768,7 @@ class UNetModel(nn.Module):
             zero_module(conv_nd(dims, input_ch, out_channels, 3, padding=1)),
         )
 
-    def forward(self, x, timesteps, y=None, soft_point=None):
+    def forward(self, x, timesteps, y=None):
         """
         Apply the model to an input batch.
         :param x: an [N x C x ...] Tensor of inputs.
@@ -788,26 +786,10 @@ class UNetModel(nn.Module):
 
         if self.num_classes is not None:
             assert y.shape == (x.shape[0],)
-            if(soft_point is None):
-                # pass
-                # y = torch.zeros_like(y)
-                label_emb = self.label_emb(y)
-                
-                #sample gaussian noise with shape (128, 256)
-                # label_emb = th.randn((x.shape[0], 4)).to(x.device)
-                
-                #normalize label_emb to be within unit sphere
-                label_emb = label_emb / label_emb.norm(dim=-1, keepdim=True)
-                
-                #sample gaussian vector closed to label_emb
-                # label_emb = sample_nearby_unit_vectors(label_emb, epsilon=0.05).to(x.device)
-            else:
-                # print("Using provided soft point")
-                label_emb = torch.Tensor(soft_point).to(x.device)
-                label_emb = label_emb / label_emb.norm(dim=-1, keepdim=True)
-                
-                #repeat label_emb to match batch size
-                label_emb = label_emb.repeat(x.shape[0], 1)
+            label_emb = self.label_emb(y)
+            
+            #normalize label_emb to be within unit sphere
+            # label_emb = label_emb / label_emb.norm(dim=-1, keepdim=True)
  
             emb = emb + label_emb
             
